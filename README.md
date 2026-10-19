@@ -1,4 +1,4 @@
-# Resource-Contracts-LLM-Analysis-pilot-project
+# Resource Contracts LLM Analysis pilot project
 LLM-Assisted Analysis of Environmental Obligations from Mining Agreements: A Methodological Pilot
 
 This project explores the use of large language models to extract structured information from publicly available mining agreements. The aim is to test whether contractual obligations can be identified, classified, and linked back to their original text in a reproducible workflow.
