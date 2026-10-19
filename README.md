@@ -45,7 +45,7 @@ Several agreements contain similar environmental language, suggesting that stand
 
 The automated quotation checks have also pointed out practical challenges associated with OCR errors and passages including a page break in the middle. The code was updated to account for page changes, but cannot account for OCR errors in the initial contract text extracted with OCR from Resourcecontract API. The code will give a notice of which quotes with OCR errors that cannot be automatically verified and these must be verified manually. 
 
-*Note: this error is seen in cell G8 of the environmental_obligations.csv file. The file claims that one quote cited by the LLM cannot be verified against the actual contract text. This is due to an OCR error in the contract text, which the LLM automatically corrected when citing the contract. It has been manually verified to be an otherwise perfectly accurate quotation of the contract test.*
+*Note: this error is seen in cell G8 of the environmental_obligations.csv file. The file claims that one quote cited by the LLM cannot be verified against the actual contract text. This is due to an OCR error in the contract text, which the LLM automatically corrected when citing the contract. It has been manually verified to be an otherwise perfectly accurate quotation of the contract text.*
 
 **Limitations**
 
