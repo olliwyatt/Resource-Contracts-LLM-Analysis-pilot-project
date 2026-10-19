@@ -1,7 +1,7 @@
 # Resource Contracts LLM Analysis pilot project
 LLM-Assisted Analysis of Environmental Obligations from Mining Agreements: A Methodological Pilot
 
-This project explores the use of large language models to extract structured information from publicly available mining agreements. The aim is to test whether contractual obligations can be identified, classified, and linked back to their original text in a reproducible workflow.
+This project explores the use of large language models to extract structured information from publicly available mining agreements. The aim is to test whether contractual obligations can be identified, classified, and linked back to their original text in a reproducible, automated workflow.
 
 The pilot focuses on environmental obligations in cobalt-related joint-venture agreements from the Democratic Republic of the Congo (DRC). Contract metadata and text are retrieved through the ResourceContracts API, processed in R, and analyzed using Google's Gemini API.
 
@@ -21,7 +21,7 @@ Contract text was retrieved directly through the API, preserving page numbers to
 
 **Methodology**
 
-The analysis was developed in R using Quarto, with the httr2 package for API requests and ellmer for interaction with Gemini.
+The analysis was developed in R using Quarto, with the httr2 package for API requests and ellmer for interaction with the Gemini API.
 
 The workflow consists of four main stages:
 
@@ -31,7 +31,7 @@ Text preparation: Clean formatting artifacts while retaining the original text a
 
 LLM extraction: Use Gemini API to identify environmental obligations and return structured observations, including the responsible party, an English description, the original supporting quotation, and a classification of specificity.
 
-Quotation verification: Compare extracted quotations against the source text using R, including checks for passages that span page boundaries.
+Quotation verification: Compare LLM extracted quotations against the source text using R, including checks for passages that span page boundaries, to check that quotes are not hallucinated or altered. 
 
 The extraction distinguishes between general environmental compliance requirements and more specific or quantified obligations.
 
@@ -45,7 +45,7 @@ Several agreements contain similar environmental language, suggesting that stand
 
 The automated quotation checks have also pointed out practical challenges associated with OCR errors and passages including a page break in the middle. The code was updated to account for page changes, but cannot account for OCR errors in the initial contract text extracted with OCR from Resourcecontract API. The code will give a notice of which quotes with OCR errors that cannot be automatically verified and these must be verified manually. 
 
-*Note: this error is seen in cell G8 of the environmental_obligations.csv file. The file claims that one quote cited by the LLM cannot be verified against the actual contract text. This is due to an OCR error in the contract text, which the LLM automatically corrected when citing the contract. It has been manually verified to be an otherwise perfectly accurate quotation of the contract text.*
+*Note: this error is seen in cell G8 of the environmental_obligations.csv file. The file claims that one quote cited by the LLM cannot be verified against the actual contract text. This is due to an OCR error in the original contract text data, which the LLM automatically corrected when quoting the contract. It has been manually verified to be an otherwise perfectly accurate quotation of the contract text.*
 
 **Limitations**
 
