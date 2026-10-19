@@ -23,12 +23,12 @@ I put in the Gemini API Key. Now let's test it
 
 library(ellmer)
 
-# Check API key
+# Checking API key
 if (Sys.getenv("GEMINI_API_KEY") == "") {
   stop("Gemini API key not found.")
 }
 
-# Connect to Gemini
+# Connecting to Gemini
 chat <- chat_google_gemini(
   model = "gemini-3.8-flash",
   system_prompt = paste(
@@ -41,7 +41,7 @@ chat <- chat_google_gemini(
   )
 )
 
-# Test connection
+# Testing connection
 chat$chat("Say hello in one sentence.")
 ```
 
@@ -98,13 +98,13 @@ environment_pages <- page_text |>
     )
   )
 
-# Display matching page numbers
+# Displaying matching page numbers
 environment_pages |>
   select(page) |>
   print(n = Inf)
 
 
-# Select matching page
+# Selecting matching page
 if (nrow(candidate_pages) > 0) {
   test_page <- candidate_pages |>
     slice_head(n = 1)
@@ -120,7 +120,7 @@ Define the research
 
 ```{r}
 
-# Define research variables
+# Defining research variables
 
 extraction_schema <- type_object(
 
@@ -168,7 +168,7 @@ chat <- chat_google_gemini(
   )
 )
 
-# Prepare prompt
+# Preparing prompt
 extraction_prompt <- paste0(
   "Analyze this page of a mining agreement.\n",
   "Identify the clearest environmental obligation,",
@@ -233,7 +233,7 @@ Will clean the text independently of prompting the gemini api
 
 ```{r}
 
-# Preserve original source text
+# Preserving original source text
 page_text <- page_text |>
   mutate(
     text_clean = vapply(
@@ -243,18 +243,18 @@ page_text <- page_text |>
     )
   )
 
-# Inspect cleaned text
+# Inspecting cleaned text
 cat(substr(page_text$text_clean[1], 1, 1000))
 
 
-# Create output directory
+# Creating output directory
 dir.create(
   "data/processed",
   recursive = TRUE,
   showWarnings = FALSE
 )
 
-# Save both 
+# Saving both 
 saveRDS(
   page_text,
   paste0(
@@ -289,7 +289,7 @@ page_text |>
 ```{r}
 
 
-# Combine all pages, keeping their page numbers
+# Combining all pages, keeping their page numbers
 full_contract_text <- page_text |>
   dplyr::arrange(page) |>
   dplyr::mutate(
@@ -301,10 +301,10 @@ full_contract_text <- page_text |>
   dplyr::pull(labeled_text) |>
   paste(collapse = "\n\n")
 
-# Check the number of characters
+# Checking the number of characters
 nchar(full_contract_text)
 
-# Preview beginning
+# Previewing beginning
 cat(substr(full_contract_text, 1, 500))
 
 ```
@@ -315,7 +315,7 @@ cat(substr(full_contract_text, 1, 500))
 
 library(ellmer)
 
-# Structure for extracting multiple environmental obligations
+# Structuring for extracting multiple environmental obligations
 full_schema <- type_object(
   obligations = type_array(
     type_object(
@@ -432,7 +432,7 @@ print(obligations, n = Inf)
 
 ```{r}
 
-# check quotations against source text
+# checking quotations against source text
 
 obligations$quote_verified <- vapply(
   seq_len(nrow(obligations)),
@@ -479,7 +479,7 @@ note: this checks whether the quote gemini returned actually exists, not whether
 
 ```{r}
 
-# Save validated table
+# Saving validated table
 write_csv(
   obligations,
   "data/processed/environmental_obligations_pilot.csv"
@@ -494,7 +494,7 @@ write_csv(
 library(dplyr)
 library(ellmer)
 
-# Analyze all agreements
+# Analyzing all agreements
 ids_to_analyze <- jva_inventory$id
 
 dir.create(
@@ -511,7 +511,7 @@ for (id in ids_to_analyze) {
     ".rds"
   )
 
-  # Skip agreements already analyzed
+  # Skipping agreements already analyzed
   if (file.exists(output_file)) next
 
   tryCatch({
@@ -531,7 +531,7 @@ for (id in ids_to_analyze) {
         )
       )
 
-    # Combine complete agreement
+    # Combining complete agreement
     full_text <- pages |>
       arrange(page) |>
       mutate(
@@ -543,7 +543,7 @@ for (id in ids_to_analyze) {
       pull(labeled) |>
       paste(collapse = "\n\n")
 
-    # Prepare research prompt
+    # Preparing research prompt
     prompt <- paste0(
       "Analyze this entire mining agreement.\n",
       "Identify all distinct explicit environmental ",
@@ -571,13 +571,13 @@ for (id in ids_to_analyze) {
       )
     )
 
-    # Extract structured observations
+    # Extracting structured observations
     result <- chat$chat_structured(
       prompt,
       type = full_schema
     )
 
-    # Preserve research outputs
+    # Preserving research outputs
     saveRDS(
       list(
         contract_id = id,
@@ -645,7 +645,7 @@ extraction_summary <- bind_rows(
   })
 )
 
-# Display summary
+# Summary
 print(extraction_summary, n = Inf)
 
 nrow(extraction_summary)
@@ -673,7 +673,7 @@ This is good. Just wanted to make sure gemini was not choosing one per contract 
 
 ```{r}
 
-# Validate quotations, including those crossing page boundaries
+# Validating quotations, including those crossing page boundaries
 
 # Normalize text
 normalize_for_match <- function(x) {
@@ -707,14 +707,14 @@ verify_contract <- function(file) {
     return(tibble::tibble())
   }
 
-  # Load source pages
+  # Source pages
   pages <- readRDS(
     paste0("data/raw/contract_text/", id, ".rds")
   )
 
   pages <- pages[order(pages$page), ]
 
-  # Verify each quotation
+  # Verifying each quotation
   obs$quote_verified <- vapply(
     seq_len(nrow(obs)),
     function(i) {
@@ -757,7 +757,7 @@ verify_contract <- function(file) {
     dplyr::mutate(contract_id = id, .before = 1)
 }
 
-# Read all saved extractions
+# Reading all saved extractions
 result_files <- list.files(
   "data/processed",
   pattern = "^full_environmental_[0-9]+\\.rds$",
@@ -769,7 +769,7 @@ all_obligations <- dplyr::bind_rows(
   lapply(result_files, verify_contract)
 )
 
-# Display the results
+# Displaying results
 all_obligations |>
   dplyr::select(
     contract_id,
@@ -800,11 +800,11 @@ all_obligations |>
 
 ```{r}
 
-# Select quotations that failed verification
+# Selecting quotations that failed verification
 failed_quotes <- all_obligations |>
   filter(!quote_verified)
 
-# Compare with source pages
+# Comparing with source pages
 for (i in seq_len(nrow(failed_quotes))) {
 
   id <- failed_quotes$contract_id[i]
