@@ -15,6 +15,8 @@ The initial search returned 136 documents across several categories, including j
 
 For this pilot, I narrowed the collection to 48 documents categorized as joint-venture agreements. This provided a more consistent starting point for comparing contractual provisions, although agreements still vary considerably in length, structure, and content.
 
+*In this pilot project, it is important to note than only 12 of these were actually processed due to the limitations of free tier of Gemini API.*
+
 Contract text was retrieved directly through the API, preserving page numbers to allow extracted passages to be checked against the original documents.
 
 **Methodology**
