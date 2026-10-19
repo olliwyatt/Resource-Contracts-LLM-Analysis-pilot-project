@@ -1,0 +1,853 @@
+---
+title: "LLM Mineral Extraction"
+format: html
+editor: visual
+---
+
+
+# Connecting LLM
+
+```{r}
+
+install.packages(c("ellmer", "usethis"))
+
+```
+
+```{r}
+file.edit(path.expand("~/.Renviron"))
+```
+
+I put in the Gemini API Key. Now let's test it
+
+```{r}
+
+library(ellmer)
+
+# Check that R can access your API key
+if (Sys.getenv("GEMINI_API_KEY") == "") {
+  stop("Gemini API key not found.")
+}
+
+# Connect to Gemini
+chat <- chat_google_gemini(
+  model = "gemini-3.8-flash",
+  system_prompt = paste(
+    "You are a research assistant analyzing",
+    "mining contracts in the Democratic Republic",
+    "of the Congo.",
+    "Extract only information supported by the text.",
+    "Do not invent contractual obligations",
+    "or supporting quotations."
+  )
+)
+
+# Test the connection
+chat$chat("Say hello in one sentence.")
+```
+
+This is our first LLM language output and it is working.
+
+```{r}
+
+library(dplyr)
+library(readr)
+library(ellmer)
+
+# Load our previously saved joint-venture inventory
+jva_inventory <- read_csv(
+  "data/drc_cobalt_jva_inventory.csv",
+  show_col_types = FALSE
+)
+
+# Select the contract we previously tested
+test_id <- jva_inventory$id[1]
+
+# Load the contract text saved from the API
+page_text <- readRDS(
+  paste0(
+    "data/raw/contract_text/",
+    test_id,
+    ".rds"
+  )
+)
+
+# Check that everything loaded successfully
+nrow(jva_inventory)
+nrow(page_text)
+
+# Preview the extracted text
+head(page_text)
+```
+
+
+```{r}
+
+
+# More precise environmental terminology
+environment_pages <- page_text |>
+  filter(
+    grepl(
+      paste(
+        "environnement",
+        "pollution",
+        "réhabilit",
+        "rehabilit",
+        "déchets",
+        "dépollution",
+        "effluents",
+        "étude d.impact",
+        sep = "|"
+      ),
+      text_clean,
+      ignore.case = TRUE
+    )
+  )
+
+# Display matching page numbers
+environment_pages |>
+  select(page) |>
+  print(n = Inf)
+
+
+# Select a matching page
+if (nrow(candidate_pages) > 0) {
+  test_page <- candidate_pages |>
+    slice_head(n = 1)
+
+  cat(test_page$text[1])
+} else {
+  message("No matching environmental passages found.")
+}
+
+```
+
+Define the research
+
+```{r}
+
+# Define our research variables
+
+extraction_schema <- type_object(
+
+  classification = type_enum(
+    c(
+      "explicit_obligation",
+      "general_reference",
+      "not_identified"
+    ),
+    "Whether the passage contains an explicit environmental obligation, a general reference, or neither."
+  ),
+
+  responsible_party = type_string(
+    "Party responsible for the obligation, or NOT_STATED."
+  ),
+
+  obligation = type_string(
+    "Describe the environmental obligation, or NOT_FOUND."
+  ),
+
+  evidence_quote = type_string(
+    "Exact quotation from the original text supporting the classification. Use NOT_FOUND if no relevant passage exists."
+  ),
+
+  explanation = type_string(
+    "Brief explanation of the classification."
+  )
+)
+```
+
+send to gemini
+
+```{r}
+
+# Create a fresh chat for this extraction
+chat <- chat_google_gemini(
+  model = "gemini-3.8-flash",
+
+  system_prompt = paste(
+    "You are a research assistant analyzing",
+    "French-language mining agreements.",
+    "Identify contractual environmental obligations.",
+    "Distinguish explicit obligations from general references.",
+    "Do not confuse legal definitions with contractual obligations.",
+    "Do not invent information or quotations.",
+    "Base your answer only on the provided text."
+  )
+)
+
+# Prepare the prompt
+extraction_prompt <- paste0(
+  "Analyze this page of a mining agreement.\n",
+  "Identify the clearest environmental obligation,",
+  " if one exists.\n",
+  "If there are several, select one for this initial test.\n",
+  "Use exact supporting quotations from the original text.\n",
+  "The absence of an obligation on this page does not",
+  " mean it is absent from the contract.\n\n",
+  "PAGE TEXT:\n",
+  test_page$text[1]
+)
+
+# Ask Gemini to extract structured data
+extraction <- chat$chat_structured(
+  extraction_prompt,
+  type = extraction_schema
+)
+
+# Display the result
+print(extraction)
+```
+
+Now testing whether the quotes given by gemini are real 
+
+```{r}
+
+
+# Clean text for quotation verification
+normalize_text <- function(x) {
+
+  # Replace HTML line breaks with spaces
+  x <- gsub(
+    "<br\\s*/?>",
+    " ",
+    x,
+    ignore.case = TRUE,
+    perl = TRUE
+  )
+
+  # Remove extra whitespace
+  x <- gsub("[[:space:]]+", " ", x)
+
+  # Remove leading and trailing spaces
+  trimws(x)
+}
+
+# Verify Gemini's quotation
+quote_found <- grepl(
+  normalize_text(extraction$evidence_quote),
+  normalize_text(test_page$text[1]),
+  fixed = TRUE
+)
+
+print(quote_found)
+
+
+```
+
+#Testing method with one contract
+
+## Cleaning contract text 
+Will clean the text independently of prompting the gemini api
+
+```{r}
+
+# Preserve original source text
+page_text <- page_text |>
+  mutate(
+    text_clean = vapply(
+      text,
+      normalize_text,
+      character(1)
+    )
+  )
+
+# Inspect cleaned text
+cat(substr(page_text$text_clean[1], 1, 1000))
+
+
+# Create output directory
+dir.create(
+  "data/processed",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+# Save both the original and cleaned text
+saveRDS(
+  page_text,
+  paste0(
+    "data/processed/contract_",
+    test_id,
+    "_clean.rds"
+  )
+)
+
+```
+
+Check amount of contract text 
+
+```{r}
+
+# Number of pages retrieved
+nrow(page_text)
+
+# Check the amount of text on each page
+page_text |>
+  mutate(
+    characters = nchar(text_clean)
+  ) |>
+  select(page, characters) |>
+  print(n = 30)
+```
+
+
+
+## Whole contract extraction
+
+```{r}
+
+
+# Combine all pages, keeping their page numbers
+full_contract_text <- page_text |>
+  dplyr::arrange(page) |>
+  dplyr::mutate(
+    labeled_text = paste0(
+      "[PAGE ", page, "]\n",
+      text_clean
+    )
+  ) |>
+  dplyr::pull(labeled_text) |>
+  paste(collapse = "\n\n")
+
+# Check the number of characters
+nchar(full_contract_text)
+
+# Preview the beginning
+cat(substr(full_contract_text, 1, 500))
+
+```
+
+## Define what Gemini Should Extract
+
+```{R}
+
+library(ellmer)
+
+# Structure for extracting multiple environmental obligations
+full_schema <- type_object(
+  obligations = type_array(
+    type_object(
+      page = type_integer(
+        "Source page number"
+      ),
+      responsible_party = type_string(
+        "Party responsible for the obligation"
+      ),
+      obligation = type_string(
+        "Brief description in English"
+      ),
+      evidence_quote = type_string(
+        "Exact supporting quotation in the original language"
+      ),
+      specificity = type_enum(
+        c("general", "specific", "quantified"),
+        "General compliance requirement, specific action, or requirement with a measurable amount or deadline"
+      )
+    ),
+    description = "All distinct explicit environmental obligations. Return an empty array if none are identified."
+  )
+)
+```
+
+Analyse entire agreement with gemini
+
+```{r}
+
+# Create a fresh Gemini session
+chat_full <- chat_google_gemini(
+  model = "gemini-3.8-flash",
+  system_prompt = paste(
+    "You are conducting systematic content analysis",
+    "of mining contracts.",
+    "Identify explicit environmental obligations.",
+    "Do not confuse contractual obligations with",
+    "definitions, general aspirations, or background law.",
+    "Use only the provided contract text.",
+    "Do not invent quotations or page numbers.",
+    "Do not make claims about legal enforceability."
+  )
+)
+
+# Prepare the full-contract prompt
+full_prompt <- paste0(
+  "Examine the entire mining agreement.\n",
+  "Identify ALL distinct environmental obligations,\n",
+  "including pollution prevention, rehabilitation,\n",
+  "environmental assessments, compliance and monitoring.\n\n",
+  "For each obligation, provide the responsible party,\n",
+  "page number, an English description, an exact quotation,\n",
+  "and its specificity.\n\n",
+  "Do not repeat the same obligation multiple times.\n",
+  "If no obligations are identified, return an empty array.\n\n",
+  full_contract_text
+)
+
+# File for saving the result
+output_file <- paste0(
+  "data/processed/full_environmental_",
+  test_id,
+  ".rds"
+)
+
+dir.create("data/processed",
+           recursive = TRUE,
+           showWarnings = FALSE)
+
+# Only call Gemini if we haven't already saved the result
+if (file.exists(output_file)) {
+
+  saved_result <- readRDS(output_file)
+  full_extraction <- saved_result$result
+
+} else {
+
+  full_extraction <- chat_full$chat_structured(
+    full_prompt,
+    type = full_schema
+  )
+
+  saveRDS(
+    list(
+      contract_id = test_id,
+      model = "gemini-3.8-flash",
+      prompt = full_prompt,
+      extraction_date = Sys.time(),
+      result = full_extraction
+    ),
+    output_file
+  )
+}
+
+print(full_extraction)
+```
+
+
+```{r}
+
+library(dplyr)
+library(tibble)
+
+obligations <- as_tibble(
+  full_extraction$obligations
+)
+
+if (nrow(obligations) > 0) {
+  obligations <- obligations |>
+    mutate(contract_id = test_id, .before = 1)
+}
+
+print(obligations, n = Inf)
+```
+
+## Validate Whole-Contract Extraction
+
+```{r}
+
+# Check each quotation against its cited source page
+
+obligations$quote_verified <- vapply(
+  seq_len(nrow(obligations)),
+  function(i) {
+
+    # Find the original page
+    source <- page_text$text_clean[
+      page_text$page == obligations$page[i]
+    ]
+
+    # Get Gemini's quotation
+    quote <- as.character(
+      obligations$evidence_quote[i]
+    )
+
+    # Handle missing pages or quotations
+    if (length(source) == 0 ||
+        is.na(quote) ||
+        !nzchar(quote)) {
+      return(FALSE)
+    }
+
+    # Verify the quotation
+    any(grepl(
+      normalize_text(quote),
+      normalize_text(source),
+      fixed = TRUE
+    ))
+  },
+  logical(1)
+)
+
+# Display the validation result
+obligations |>
+  select(
+    page,
+    obligation,
+    specificity,
+    quote_verified
+  ) |>
+  print(width = Inf)
+```
+note: this checks whether the quote gemini returned actually exists, not whether it's interpreted correctly
+
+```{r}
+
+# Save the validated table
+write_csv(
+  obligations,
+  "data/processed/environmental_obligations_pilot.csv"
+)
+```
+
+# Automated Full-Document Extraction
+
+
+```{r}
+
+library(dplyr)
+library(ellmer)
+
+# Analyze all 48 agreements
+ids_to_analyze <- jva_inventory$id
+
+dir.create(
+  "data/processed",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+for (id in ids_to_analyze) {
+
+  output_file <- paste0(
+    "data/processed/full_environmental_",
+    id,
+    ".rds"
+  )
+
+  # Skip agreements already analyzed
+  if (file.exists(output_file)) next
+
+  tryCatch({
+
+    # Load document text
+    pages <- readRDS(
+      paste0("data/raw/contract_text/", id, ".rds")
+    )
+
+    # Clean text while retaining page numbers
+    pages <- pages |>
+      mutate(
+        text_clean = vapply(
+          text,
+          normalize_text,
+          character(1)
+        )
+      )
+
+    # Combine complete agreement
+    full_text <- pages |>
+      arrange(page) |>
+      mutate(
+        labeled = paste0(
+          "[PAGE ", page, "]\n",
+          text_clean
+        )
+      ) |>
+      pull(labeled) |>
+      paste(collapse = "\n\n")
+
+    # Prepare the research prompt
+    prompt <- paste0(
+      "Analyze this entire mining agreement.\n",
+      "Identify all distinct explicit environmental ",
+      "obligations established by its provisions.\n",
+      "Include environmental compliance, rehabilitation, ",
+      "pollution prevention, assessments and monitoring.\n",
+      "Exclude definitions, general aspirations and ",
+      "unrelated legal background.\n",
+      "For each obligation, provide the responsible ",
+      "party, page, English description, exact original ",
+      "quotation and specificity.\n",
+      "Do not invent information or repeat obligations.\n\n",
+      full_text
+    )
+
+    # Fresh session for each agreement
+    chat <- chat_google_gemini(
+      model = "gemini-3.8-flash",
+      system_prompt = paste(
+        "You conduct systematic content analysis",
+        "of mining contracts.",
+        "Report only explicitly supported obligations.",
+        "Do not invent information or quotations.",
+        "Use the supplied page numbers."
+      )
+    )
+
+    # Extract structured observations
+    result <- chat$chat_structured(
+      prompt,
+      type = full_schema
+    )
+
+    # Preserve research outputs
+    saveRDS(
+      list(
+        contract_id = id,
+        model = "gemini-3.8-flash",
+        prompt = prompt,
+        extracted_at = Sys.time(),
+        result = result
+      ),
+      output_file
+    )
+
+    message(
+      "Completed contract ", id,
+      ": ", length(result$obligations),
+      " obligations"
+    )
+
+  }, error = function(e) {
+    message("Failed contract ", id, ": ", e$message)
+  })
+
+  Sys.sleep(60)
+}
+```
+
+Note: on the free tier of gemini api, I cannot run this code for all the files in one day
+The code below shows how many contracts have been processed and how many still need to be downloaded
+
+```{r}
+
+result_files <- list.files(
+  "data/processed",
+  pattern = "^full_environmental_[0-9]+\\.rds$",
+  full.names = TRUE
+)
+
+length(result_files)
+```
+
+
+#Processing the extracted contracts
+
+```{r}
+
+library(dplyr)
+library(tibble)
+
+# Find all saved whole-contract extraction files
+result_files <- list.files(
+  "data/processed",
+  pattern = "^full_environmental_[0-9]+\\.rds$",
+  full.names = TRUE
+)
+
+# Summarize each contract's extraction
+extraction_summary <- bind_rows(
+  lapply(result_files, function(file) {
+
+    saved <- readRDS(file)
+
+    tibble(
+      contract_id = saved$contract_id,
+      obligations_found = nrow(
+        as_tibble(saved$result$obligations)
+      )
+    )
+  })
+)
+
+# Display the summary
+print(extraction_summary, n = Inf)
+
+# Number of agreements analyzed
+nrow(extraction_summary)
+```
+
+Checking how many obligations there are per contract
+
+```{r}
+
+# How many environmental obligations per agreement?
+extraction_summary |>
+  count(obligations_found, name = "contracts") |>
+  arrange(obligations_found)
+
+# Total environmental obligations identified
+sum(extraction_summary$obligations_found)
+
+# Average obligations per agreement
+mean(extraction_summary$obligations_found)
+```
+
+This is good. Just wanted to make sure gemini was not choosing one per contract across all contracts. 
+
+
+
+```{r}
+
+# Validate quotations, including those crossing page boundaries
+
+# Normalize text for comparison
+normalize_for_match <- function(x) {
+
+  # Remove HTML formatting
+  x <- gsub("<br\\s*/?>", " ", x,
+            ignore.case = TRUE, perl = TRUE)
+  x <- gsub("<[^>]+>", " ", x)
+
+  # Standardize invisible characters and apostrophes
+  x <- gsub("[\u00A0\uFEFF\u200B]", " ", x, perl = TRUE)
+  x <- gsub("[\u2018\u2019]", "'", x, perl = TRUE)
+
+  # Standardize whitespace
+  x <- gsub("[[:space:]]+", " ", x)
+
+  trimws(x)
+}
+
+# Verify the extracted obligations in one contract
+verify_contract <- function(file) {
+
+  saved <- readRDS(file)
+  id <- saved$contract_id
+
+  obs <- tibble::as_tibble(
+    saved$result$obligations
+  )
+
+  if (nrow(obs) == 0) {
+    return(tibble::tibble())
+  }
+
+  # Load source pages
+  pages <- readRDS(
+    paste0("data/raw/contract_text/", id, ".rds")
+  )
+
+  pages <- pages[order(pages$page), ]
+
+  # Verify each quotation
+  obs$quote_verified <- vapply(
+    seq_len(nrow(obs)),
+    function(i) {
+
+      pg <- as.integer(obs$page[i])
+      quote <- as.character(obs$evidence_quote[i])
+
+      if (is.na(pg) || is.na(quote) ||
+          !nzchar(quote) ||
+          !(pg %in% pages$page)) {
+        return(FALSE)
+      }
+
+      # Check the cited page alone and with its neighbors
+      candidates <- list(
+        pages$text[pages$page == pg],
+        pages$text[pages$page %in% c(pg, pg + 1)],
+        pages$text[pages$page %in% c(pg - 1, pg)]
+      )
+
+      any(vapply(
+        candidates,
+        function(part) {
+
+          source <- normalize_for_match(
+            paste(part, collapse = " ")
+          )
+
+          quote_clean <- normalize_for_match(quote)
+
+          grepl(quote_clean, source, fixed = TRUE)
+        },
+        logical(1)
+      ))
+    },
+    logical(1)
+  )
+
+  obs |>
+    dplyr::mutate(contract_id = id, .before = 1)
+}
+
+# Read all saved extractions
+result_files <- list.files(
+  "data/processed",
+  pattern = "^full_environmental_[0-9]+\\.rds$",
+  full.names = TRUE
+)
+
+# Combine and verify all observations
+all_obligations <- dplyr::bind_rows(
+  lapply(result_files, verify_contract)
+)
+
+# Display the results
+all_obligations |>
+  dplyr::select(
+    contract_id,
+    page,
+    obligation,
+    quote_verified
+  ) |>
+  print(n = Inf, width = Inf)
+
+```
+
+```{r}
+
+# Show quotations requiring manual investigation
+all_obligations |>
+  dplyr::filter(!quote_verified) |>
+  dplyr::select(
+    contract_id,
+    page,
+    evidence_quote
+  ) |>
+  print(n = Inf, width = Inf)
+
+```
+
+## Investigate Unverified Quotations
+
+```{r}
+
+# Select quotations that failed verification
+failed_quotes <- all_obligations |>
+  filter(!quote_verified)
+
+# Compare the quotations with their source pages
+for (i in seq_len(nrow(failed_quotes))) {
+
+  id <- failed_quotes$contract_id[i]
+  pg <- failed_quotes$page[i]
+
+  pages <- readRDS(
+    paste0("data/raw/contract_text/", id, ".rds")
+  )
+
+  original <- pages$text[pages$page == pg]
+
+  cat("\n\nCONTRACT:", id, "PAGE:", pg, "\n")
+
+  cat("\nGEMINI QUOTATION:\n")
+  cat(failed_quotes$evidence_quote[i])
+
+  cat("\n\nORIGINAL PAGE:\n")
+  cat(normalize_text(original))
+
+  cat("\n\n--------------------------\n")
+}
+
+```
+
+Methods changes: updated environmental key words becuase french word environ (which means approximately) was creating false positive matches. Additionally, verification needs to account for quotes tha tcross over page breaks, so this was added. There is also the issue that some quotes will be one letter off the gemeni quote due to OCR mismatches/errors in the resourcecontracts API. 
+
+
+
+
+
+
+
+

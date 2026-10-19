@@ -1,0 +1,459 @@
+---
+title: "Resource Contracts API Dataset"
+author: "Oliver Wyatt"
+format: html
+editor: visual
+---
+
+```{r}
+
+install.packages("httr2")
+
+library(httr2)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(jsonlite)
+
+
+```
+
+# Setting Up API
+
+First trying to filter for DRC and check API connection
+
+```{r}
+
+
+# Request the first five DRC contracts
+response_drc <- request(
+  "https://api.resourcecontracts.org/contracts/search"
+) |>
+  req_url_query(
+    group = "metadata",
+    country_code = "cd",
+    per_page = 5,
+    from = 0
+  ) |>
+  req_perform()
+
+# Parse the response
+drc_test <- jsonlite::fromJSON(
+  resp_body_string(response_drc),
+  simplifyVector = FALSE
+)
+
+# How many contracts match?
+drc_test$total
+
+# What mineral resources appear in the first five?
+drc_test$resource
+
+# What fields does each contract record contain?
+if (length(drc_test$results) > 0) {
+  names(drc_test$results[[1]])
+}
+
+
+
+```
+
+This appears to be working. Moving on to the next step now.
+
+# Cobalt agreements from DRC
+
+```{r}
+
+# Search for cobalt-related agreements in the DRC
+
+response_cobalt <- request(
+  "https://api.resourcecontracts.org/contracts/search"
+) |>
+  req_url_query(
+    group = "metadata",
+    country_code = "cd",
+    resource = "Cobalt",
+    per_page = 5,
+    from = 0
+  ) |>
+  req_perform()
+
+# Convert the response to an R object
+cobalt_test <- jsonlite::fromJSON(
+  resp_body_string(response_cobalt),
+  simplifyVector = FALSE
+)
+
+# Number of matching agreements
+cobalt_test$total
+
+# Number of records retrieved
+length(cobalt_test$results)
+
+# Examine the first contract
+if (length(cobalt_test$results) > 0) {
+  str(cobalt_test$results[[1]], max.level = 2)
+}
+
+```
+
+there are 136 relevant records about cobalt (note that this includes contracts including cobalt not contracts exclusively about cobalt)
+
+## Retrieve every matching contract
+
+```{r}
+
+# Number of contracts to retrieve per request
+page_size <- 25
+
+# Starting positions for each request
+offsets <- seq(
+  from = 0,
+  to = cobalt_test$total - 1,
+  by = page_size
+)
+
+# Function to retrieve one batch
+fetch_page <- function(offset) {
+
+  response <- request(
+    "https://api.resourcecontracts.org/contracts/search"
+  ) |>
+    req_url_query(
+      group = "metadata",
+      country_code = "cd",
+      resource = "Cobalt",
+      per_page = page_size,
+      from = offset
+    ) |>
+    req_retry(max_tries = 3) |>
+    req_perform()
+
+  body <- resp_body_string(response)
+
+  if (!jsonlite::validate(body)) {
+    stop("API did not return valid JSON.")
+  }
+
+  data <- jsonlite::fromJSON(
+    body,
+    simplifyVector = FALSE
+  )
+
+  data$results
+}
+
+# Retrieve all batches
+pages <- lapply(offsets, fetch_page)
+
+# Combine batches into one list
+all_contracts <- unlist(
+  pages,
+  recursive = FALSE
+)
+
+# Verify the number retrieved
+length(all_contracts)
+
+
+```
+
+Then creating a data frame
+
+```{r}
+
+library(dplyr)
+library(tibble)
+library(readr)
+
+# Handle missing metadata values
+scalar_value <- function(x) {
+  if (length(x) == 0) NA_character_
+  else as.character(x[[1]])
+}
+
+# Combine multiple labels in one cell
+multi_value <- function(x) {
+  paste(unlist(x), collapse = "; ")
+}
+
+# Convert the contract records to a table
+inventory <- bind_rows(
+  lapply(all_contracts, function(x) {
+    tibble(
+      id = x$id,
+      contract_id = scalar_value(x$open_contracting_id),
+      title = scalar_value(x$name),
+      year = as.integer(scalar_value(x$year_signed)),
+      contract_type = multi_value(x$contract_type),
+      resources = multi_value(x$resource),
+      language = scalar_value(x$language),
+      ocr_reviewed = isTRUE(x$is_ocr_reviewed)
+    )
+  })
+)
+
+# Inspect the inventory
+View(inventory)
+
+# Examine the different agreement types
+inventory |>
+  count(contract_type, sort = TRUE)
+
+# Examine the years represented
+inventory |>
+  count(year, sort = FALSE)
+
+# Check unique record IDs
+n_distinct(inventory$id)
+
+```
+
+Save as a csv so I don't have to query the api every time
+
+```{r}
+
+# Create folders if they don't exist
+dir.create("data/raw", recursive = TRUE, showWarnings = FALSE)
+
+# Preserve the complete API metadata
+saveRDS(
+  all_contracts,
+  "data/raw/drc_cobalt_metadata.rds"
+)
+
+# Export the simplified document inventory
+write_csv(
+  inventory,
+  "data/drc_cobalt_inventory.csv"
+)
+
+```
+
+## Filter by Joint Venture Agreement
+
+```{r}
+
+
+# Select only joint-venture agreements
+jva_inventory <- inventory |>
+  filter(contract_type == "Joint Venture Agreement") |>
+  arrange(year)
+
+# Confirm the number of agreements
+nrow(jva_inventory)
+
+# Examine the documents
+jva_inventory |>
+  select(
+    id,
+    year,
+    title,
+    resources,
+    language,
+    ocr_reviewed
+  ) |>
+  print(n = 48)
+
+# Count OCR-reviewed and non-reviewed documents
+jva_inventory |>
+  count(ocr_reviewed)
+
+# Save the filtered inventory
+write_csv(
+  jva_inventory,
+  "data/drc_cobalt_jva_inventory.csv"
+)
+
+```
+
+```{r}
+jva_inventory |>
+  count(ocr_reviewed)
+```
+
+# API contract text retrieval
+
+```{r}
+
+library(httr2)
+library(jsonlite)
+library(dplyr)
+library(tibble)
+
+# Select one of our 48 agreements
+test_id <- jva_inventory$id[1]
+
+# Retrieve its text
+response_text <- request(
+  paste0(
+    "https://api.resourcecontracts.org/contract/",
+    test_id,
+    "/text"
+  )
+) |>
+  req_retry(max_tries = 3) |>
+  req_perform()
+
+# Parse response as JSON
+body <- resp_body_string(response_text)
+
+stopifnot(jsonlite::validate(body))
+
+contract_text <- jsonlite::fromJSON(
+  body,
+  simplifyVector = FALSE
+)
+
+# Examine the API response
+names(contract_text)
+str(contract_text, max.level = 2)
+
+```
+
+```{r}
+
+# Handle either documented response key
+pages <- if (!is.null(contract_text$result)) {
+  contract_text$result
+} else {
+  contract_text$results
+}
+
+stopifnot(length(pages) > 0)
+
+# One row per contract page
+page_text <- bind_rows(
+  lapply(pages, function(p) {
+    tibble(
+      contract_id = test_id,
+      page = as.integer(p$page_no),
+      text = if (is.null(p$text)) "" else p$text
+    )
+  })
+) |>
+  arrange(page)
+
+# Check how much text is available
+page_text |>
+  mutate(characters = nchar(text)) |>
+  select(contract_id, page, characters) |>
+  print(n = 20)
+
+# Examine the text
+cat(substr(page_text$text[1], 1, 1500))
+
+# Save the text locally
+dir.create(
+  "data/raw/contract_text",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+saveRDS(
+  page_text,
+  paste0("data/raw/contract_text/", test_id, ".rds")
+)
+
+```
+
+Perfect, so retrieving the text is working.
+
+# Download Joint Venture Contract Text
+
+```{r}
+
+
+library(httr2)
+library(jsonlite)
+library(dplyr)
+library(tibble)
+
+# Function to retrieve one complete contract
+fetch_contract_text <- function(id) {
+
+  response <- request(
+    paste0(
+      "https://api.resourcecontracts.org/contract/",
+      id,
+      "/text"
+    )
+  ) |>
+    req_retry(max_tries = 3) |>
+    req_perform()
+
+  body <- resp_body_string(response)
+
+  if (!jsonlite::validate(body)) {
+    stop("Invalid JSON for contract ", id)
+  }
+
+  result <- jsonlite::fromJSON(
+    body,
+    simplifyVector = FALSE
+  )
+
+  pages <- if (!is.null(result$result)) {
+    result$result
+  } else {
+    result$results
+  }
+
+  if (length(pages) == 0) {
+    stop("No pages returned for contract ", id)
+  }
+
+  # Convert pages to a table
+  bind_rows(lapply(pages, function(p) {
+    tibble(
+      contract_id = id,
+      page = as.integer(p$page_no),
+      text = if (is.null(p$text)) "" else p$text
+    )
+  }))
+}
+
+# Directory for original contract text
+dir.create(
+  "data/raw/contract_text",
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+# Download every agreement, skipping saved files
+for (id in jva_inventory$id) {
+
+  file <- paste0(
+    "data/raw/contract_text/",
+    id,
+    ".rds"
+  )
+
+  if (file.exists(file)) next
+
+  tryCatch({
+
+    pages <- fetch_contract_text(id)
+    saveRDS(pages, file)
+
+    message("Saved contract ", id)
+
+  }, error = function(e) {
+    message("Failed contract ", id, ": ", e$message)
+  })
+
+  Sys.sleep(1)
+}
+
+# Check how many contracts were saved
+sum(file.exists(
+  paste0(
+    "data/raw/contract_text/",
+    jva_inventory$id,
+    ".rds"
+  )
+))
+```
+
+
+
