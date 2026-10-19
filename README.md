@@ -47,26 +47,13 @@ The automated quotation checks have also pointed out practical challenges associ
 
 *Note: this error is seen in cell G8 of the environmental_obligations.csv file. The file claims that one quote cited by the LLM cannot be verified against the actual contract text. This is due to an OCR error in the original contract text data, which the LLM automatically corrected when quoting the contract. It has been manually verified to be an otherwise perfectly accurate quotation of the contract text.*
 
-**Limitations**
+**Note**
 
 This is a methodological pilot, and the resulting observations should not be treated as a validated or representative dataset.
 
-In particular:
-
-Successfully matching a quotation to its source does not establish that the LLM has interpreted the meaning of the text correctly.
-
-The model may overlook relevant obligations or classify them inconsistently.
-
-ResourceContracts includes publicly available agreements and does not necessarily represent all mining agreements signed in the DRC.
-
-Multiple agreements may concern the same mining project.
-
-Contractual requirements do not necessarily reflect implementation, regulatory enforcement, or environmental outcomes.
-
-A larger study would require a clearly defined coding framework, systematic manual validation, and additional consideration of document coverage and comparability.
 
 
-**Project structure**
+**Documents**
 
 The analysis is organized into two Quarto documents:
 
@@ -89,13 +76,6 @@ The extraction stage requires access to the Gemini API. The API key should be st
 
 This project used only the free version of the Gemini API key, which accounts for the small number of contracts analyzed. 
 
-
-**Further development**
-
-The broader objective is to explore whether unstructured mining agreements can provide useful quantitative measures of environmental protection data through automating LLM analysis. 
-
-
-Whether this approach is suitable for a larger research project will depend on the availability of comparable documents, the reliability of the extracted variables, and their relevance to the underlying research question.
 
 
 **Sources**
